@@ -1,21 +1,22 @@
-// 尹氏家谱 v3.0 - 主应用逻辑（多用户+房支权限）
+// 尹氏家谱 v4.0 - 主应用逻辑（多用户 + 亲属关系 + 自动保存）
 (function () {
   const LS_KEY = 'yin_family_tree_data';
   const LS_USERS = 'yin_family_users';
   const LS_SESSION = 'yin_family_session';
   let resetTreeFn = null;
+  let autoSaveTimer = null;
   const state = { family: null, currentUser: null };
 
   const $ = id => document.getElementById(id);
 
   // ---------- 用户系统 ----------
-  // 用户结构：{ user, pass, role: 'admin'|'user', branch: '长房'|null }
+  // 用户结构：{ user, pass, role: 'admin'|'user' }
   function getUsers() {
     try {
       const users = JSON.parse(localStorage.getItem(LS_USERS));
       if (users && users.length) return users;
     } catch (e) {}
-    return [{ user: 'admin', pass: 'yin190523', role: 'admin', branch: null }];
+    return [{ user: 'admin', pass: 'yin190523', role: 'admin' }];
   }
 
   function saveUsers(users) { localStorage.setItem(LS_USERS, JSON.stringify(users)); }
@@ -27,8 +28,6 @@
   function setSession(s) { s ? localStorage.setItem(LS_SESSION, JSON.stringify(s)) : localStorage.removeItem(LS_SESSION); }
 
   function isAdmin() { return state.currentUser && state.currentUser.role === 'admin'; }
-
-  function getUserBranch() { return state.currentUser ? state.currentUser.branch : null; }
 
   // ---------- 登录/注册 ----------
   function showLogin() {
@@ -60,28 +59,12 @@
   function updateUIForRole() {
     if (!state.currentUser) return;
     const u = state.currentUser;
-    $('userBadge').textContent = u.role === 'admin' ? '管理员' : (u.branch || '用户');
+    $('userBadge').textContent = u.role === 'admin' ? '管理员' : '族人';
     $('userBadge').className = 'user-badge' + (u.role === 'admin' ? ' admin' : '');
 
     // 管理员能看到所有功能，普通用户隐藏用户管理和账号管理
     $('cardUsers').style.display = isAdmin() ? '' : 'none';
     $('cardAccount').style.display = isAdmin() ? '' : 'none';
-
-    // 普通用户的成员标题显示房支
-    $('membersTitle').textContent = isAdmin() ? '成员名录' : (u.branch ? u.branch + '成员' : '成员名录');
-
-    // 普通用户续谱时房支自动锁定
-    const branchInput = $('f_branch');
-    if (!isAdmin() && u.branch) {
-      branchInput.value = u.branch;
-      branchInput.readOnly = true;
-      branchInput.style.background = '#f0ebe1';
-      branchInput.style.color = '#999';
-    } else {
-      branchInput.readOnly = false;
-      branchInput.style.background = '';
-      branchInput.style.color = '';
-    }
 
     if (isAdmin()) {
       $('s_username').value = u.user;
@@ -104,7 +87,7 @@
       showApp();
       state.family = loadLocal() || defaultFamily();
       document.title = state.family.clan.name + ' · 家谱';
-      setSync('offline', '本地模式');
+      setSync('offline', '已自动保存');
       refreshAll();
     } else {
       alert('用户名或密码不正确');
@@ -115,21 +98,20 @@
     e.preventDefault();
     const user = $('regUser').value.trim();
     const pass = $('regPass').value.trim();
-    const branch = $('regBranch').value.trim();
-    if (!user || !pass || !branch) { alert('请填写所有字段'); return; }
+    if (!user || !pass) { alert('请填写用户名和密码'); return; }
     const users = getUsers();
     if (users.find(u => u.user === user)) { alert('该用户名已存在'); return; }
-    const newUser = { user, pass, role: 'user', branch };
+    const newUser = { user, pass, role: 'user' };
     users.push(newUser);
     saveUsers(users);
     state.currentUser = newUser;
     setSession({ user: newUser.user });
-    $('regUser').value = ''; $('regPass').value = ''; $('regBranch').value = '';
-    alert('注册成功！您只能管理「' + branch + '」的成员');
+    $('regUser').value = ''; $('regPass').value = '';
+    alert('注册成功！您可以查看族谱和续谱');
     showApp();
     state.family = loadLocal() || defaultFamily();
     document.title = state.family.clan.name + ' · 家谱';
-    setSync('offline', '本地模式');
+    setSync('offline', '已自动保存');
     refreshAll();
   }
 
@@ -171,7 +153,7 @@
       const isMe = state.currentUser && state.currentUser.user === u.user;
       const delBtn = u.role !== 'admin' && !isMe
         ? `<button class="btn small danger" onclick="window._app.deleteUser('${u.user}')">删除</button>` : '';
-      const roleLabel = u.role === 'admin' ? '管理员' : (u.branch || '普通用户');
+      const roleLabel = u.role === 'admin' ? '管理员' : '族人';
       return `<div class="user-item">
         <div class="user-info"><b>${u.user}</b> <span class="hint">${roleLabel}</span></div>
         ${delBtn}
@@ -180,19 +162,65 @@
     $('userList').innerHTML = html;
   }
 
-  // ---------- 权限过滤 ----------
-  function getVisibleMembers() {
-    if (isAdmin()) return state.family.members;
-    const branch = getUserBranch();
-    if (!branch) return state.family.members;
-    return state.family.members.filter(m => !m.branch || m.branch === branch);
+  // ---------- 权限 ----------
+  function canEdit() { return isAdmin(); }
+  function canAdd() { return !!state.currentUser; }
+
+  // ---------- 传统称呼计算 ----------
+  function getBirthOrderName(member) {
+    if (!member.birthOrder) return '';
+    const order = parseInt(member.birthOrder, 10);
+    const male = member.gender !== '女';
+    const names = male
+      ? ['', '长子', '次子', '三子', '四子', '五子', '六子', '七子', '八子', '九子']
+      : ['', '长女', '次女', '三女', '四女', '五女', '六女', '七女', '八女', '九女'];
+    return names[order] || '';
   }
 
-  function canEditMember(m) {
-    if (isAdmin()) return true;
-    const branch = getUserBranch();
-    if (!branch) return true;
-    return !m.branch || m.branch === branch;
+  // 获取某成员的兄弟
+  function getBrothers(member) {
+    if (!member) return [];
+    const all = state.family.members;
+    // 通过兄弟ID列表
+    const byId = new Map(all.map(m => [m.id, m]));
+    let bros = [];
+    if (member.brotherIds && member.brotherIds.length) {
+      bros = member.brotherIds.map(id => byId.get(id)).filter(Boolean);
+    }
+    // 也通过共同父亲查找
+    if (member.fatherId) {
+      all.forEach(m => {
+        if (m.id !== member.id && m.fatherId === member.fatherId && m.gender !== '女' && !bros.find(b => b.id === m.id)) {
+          bros.push(m);
+        }
+      });
+    }
+    return bros;
+  }
+
+  // 获取某成员的姐妹
+  function getSisters(member) {
+    if (!member) return [];
+    const all = state.family.members;
+    const byId = new Map(all.map(m => [m.id, m]));
+    let sis = [];
+    if (member.sisterIds && member.sisterIds.length) {
+      sis = member.sisterIds.map(id => byId.get(id)).filter(Boolean);
+    }
+    if (member.fatherId) {
+      all.forEach(m => {
+        if (m.id !== member.id && m.fatherId === member.fatherId && m.gender === '女' && !sis.find(s => s.id === m.id)) {
+          sis.push(m);
+        }
+      });
+    }
+    return sis;
+  }
+
+  // 获取子女
+  function getChildren(member) {
+    if (!member) return [];
+    return state.family.members.filter(m => m.fatherId === member.id || m.motherId === member.id);
   }
 
   // ---------- 数据加载 ----------
@@ -205,7 +233,19 @@
     return null;
   }
 
-  function saveLocal() { localStorage.setItem(LS_KEY, JSON.stringify(state.family)); }
+  // ---------- 自动保存 ----------
+  function saveLocal() {
+    localStorage.setItem(LS_KEY, JSON.stringify(state.family));
+    setSync('offline', '已自动保存 ' + new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }));
+  }
+
+  function autoSave() {
+    if (autoSaveTimer) clearTimeout(autoSaveTimer);
+    autoSaveTimer = setTimeout(() => {
+      saveLocal();
+      refreshAll();
+    }, 800);
+  }
 
   function init() {
     bindEvents();
@@ -218,7 +258,7 @@
         showApp();
         state.family = loadLocal() || defaultFamily();
         document.title = state.family.clan.name + ' · 家谱';
-        setSync('offline', '本地模式');
+        setSync('offline', '已自动保存');
         refreshAll();
         return;
       }
@@ -243,21 +283,19 @@
   function renderTree() {
     const svg = $('treeSvg');
     const wrap = $('treeWrap');
-    // 普通用户只看本房支的树
-    const visibleData = { clan: state.family.clan, members: getVisibleMembers() };
-    Tree.render(svg, visibleData, id => openMember(id));
+    Tree.render(svg, { clan: state.family.clan, members: state.family.members }, id => openMember(id));
     resetTreeFn = Tree.enablePanZoom(wrap, svg);
     $('btnResetTree').onclick = () => resetTreeFn && resetTreeFn();
   }
 
   function renderMembers() {
     const keyword = ($('searchInput') ? $('searchInput').value : '').trim().toLowerCase();
-    let list = getVisibleMembers().slice().sort((a, b) => (a.generation - b.generation) || a.name.localeCompare(b.name, 'zh'));
+    let list = state.family.members.slice().sort((a, b) => (a.generation - b.generation) || a.name.localeCompare(b.name, 'zh'));
     if (keyword) {
       list = list.filter(m =>
         (m.name || '').toLowerCase().includes(keyword) ||
         (m.alias || '').toLowerCase().includes(keyword) ||
-        (m.branch || '').toLowerCase().includes(keyword)
+        String(m.generation || '').includes(keyword)
       );
     }
     const box = $('memberList');
@@ -266,16 +304,21 @@
       return;
     }
     box.innerHTML = list.map(m => {
-      const sub = [m.branch && '房支:' + m.branch, m.birth && '生于' + m.birth, m.death && '卒于' + m.death].filter(Boolean).join(' · ');
+      const orderName = getBirthOrderName(m);
+      const sub = [
+        orderName,
+        m.birth && '生于' + m.birth,
+        m.death && '卒于' + m.death
+      ].filter(Boolean).join(' · ');
       const aliasHtml = m.alias ? `<div class="mi-alias">${m.alias}</div>` : '';
       return `<div class="member-item" data-id="${m.id}">
         <div class="avatar ${m.gender === '女' ? 'female' : ''}">${(m.name || '?').slice(-1)}</div>
         <div class="mi-main">
-          <div class="mi-name">${m.name || '未命名'}</div>
+          <div class="mi-name">${m.name || '未命名'}${orderName ? '<span class="mi-order">' + orderName + '</span>' : ''}</div>
           ${aliasHtml}
           <div class="mi-sub">${sub || '—'}</div>
         </div>
-        <span class="mi-gen">${m.generation ? '第' + m.generation + '世' : '世数未定'}</span>
+        <span class="mi-gen">${m.generation ? '第' + m.generation + '世' : '世次未定'}</span>
       </div>`;
     }).join('');
     box.querySelectorAll('.member-item').forEach(el => {
@@ -289,14 +332,24 @@
   function openMember(id) {
     const m = getMember(id);
     if (!m) return;
-    if (!canEditMember(m)) { alert('您只能查看本房支的成员信息'); return; }
     const spouse = m.spouseId ? getMember(m.spouseId) : null;
     const father = m.fatherId ? getMember(m.fatherId) : null;
+    const mother = m.motherId ? getMember(m.motherId) : null;
+    const brothers = getBrothers(m);
+    const sisters = getSisters(m);
+    const children = getChildren(m);
+    const orderName = getBirthOrderName(m);
+
     const rows = [
       ['曾用名', m.alias], ['性别', m.gender],
       ['世次', m.generation ? '第' + m.generation + '世' : ''],
-      ['房支', m.branch], ['父亲', father ? father.name : ''],
+      ['排行', orderName],
+      ['父亲', father ? father.name : ''],
+      ['母亲', mother ? mother.name : ''],
       ['配偶', spouse ? spouse.name : ''],
+      ['兄弟', brothers.length ? brothers.map(b => b.name).join('、') : ''],
+      ['姐妹', sisters.length ? sisters.map(s => s.name).join('、') : ''],
+      ['子女', children.length ? children.map(c => c.name).join('、') : ''],
       ['出生', m.birth], ['逝世', m.death],
       ['籍贯', m.birthPlace], ['安葬', m.burialPlace],
       ['手机', m.phone], ['微信', m.wechat],
@@ -315,44 +368,51 @@
   function deleteMember(id) {
     const m = getMember(id);
     if (!m) return;
-    if (!canEditMember(m)) { alert('您没有权限删除此成员'); return; }
+    if (!canEdit()) { alert('只有管理员可以删除成员'); return; }
     if (!confirm(`确定删除「${m.name}」吗？\n其子女的"父亲"关系将一并解除。`)) return;
     state.family.members = state.family.members.filter(x => x.id !== id);
     state.family.members.forEach(x => {
       if (x.fatherId === id) x.fatherId = null;
+      if (x.motherId === id) x.motherId = null;
       if (x.spouseId === id) x.spouseId = null;
+      if (x.brotherIds) x.brotherIds = x.brotherIds.filter(b => b !== id);
+      if (x.sisterIds) x.sisterIds = x.sisterIds.filter(s => s !== id);
     });
     closeModal();
-    persist();
+    autoSave();
   }
 
   // ---------- 续谱表单 ----------
   function fillFormSelects() {
-    const visible = getVisibleMembers();
-    const opts = visible
-      .slice()
-      .sort((a, b) => (a.generation - b.generation) || a.name.localeCompare(b.name, 'zh'))
-      .map(m => `<option value="${m.id}">第${m.generation || '?'}世 ${m.name}</option>`)
-      .join('');
-    $('f_father').innerHTML = '<option value="">— 无（始祖/配偶） —</option>' + opts;
-    $('f_spouse').innerHTML = '<option value="">— 无 —</option>' + opts;
+    const all = state.family.members;
+    const males = all.filter(m => m.gender !== '女');
+    const females = all.filter(m => m.gender === '女');
+    const sortFn = (a, b) => (a.generation - b.generation) || a.name.localeCompare(b.name, 'zh');
+
+    const allOpts = all.slice().sort(sortFn).map(m => `<option value="${m.id}">第${m.generation || '?'}世 ${m.name}</option>`).join('');
+    $('f_father').innerHTML = '<option value="">— 无（始祖） —</option>' + males.slice().sort(sortFn).map(m => `<option value="${m.id}">第${m.generation || '?'}世 ${m.name}</option>`).join('');
+    $('f_mother').innerHTML = '<option value="">— 无 —</option>' + females.slice().sort(sortFn).map(m => `<option value="${m.id}">第${m.generation || '?'}世 ${m.name}</option>`).join('');
+    $('f_spouse').innerHTML = '<option value="">— 无 —</option>' + allOpts;
+
+    // 兄弟列表（男性）
+    $('f_brothers').innerHTML = males.slice().sort(sortFn).map(m => `<option value="${m.id}">第${m.generation || '?'}世 ${m.name}</option>`).join('');
+    // 姐妹列表（女性）
+    $('f_sisters').innerHTML = females.slice().sort(sortFn).map(m => `<option value="${m.id}">第${m.generation || '?'}世 ${m.name}</option>`).join('');
   }
 
   function openForm(id) {
     const m = id ? getMember(id) : null;
-    if (id && m && !canEditMember(m)) { alert('您没有权限编辑此成员'); return; }
+    if (id && m && !canEdit()) { alert('只有管理员可以编辑成员'); return; }
+    if (!id && !canAdd()) { alert('请先登录'); return; }
     $('formTitle').textContent = m ? '续谱 · 编辑成员' : '续谱 · 新增成员';
     $('f_id').value = m ? m.id : '';
     $('f_name').value = m ? m.name : '';
     $('f_alias').value = m ? m.alias || '' : '';
     $('f_gender').value = m ? m.gender : '男';
     $('f_generation').value = m ? m.generation || '' : '';
-    $('f_branch').value = m ? m.branch || '' : '';
-    // 普通用户自动填入房支并锁定
-    if (!isAdmin() && state.currentUser && state.currentUser.branch) {
-      $('f_branch').value = state.currentUser.branch;
-    }
+    $('f_birthOrder').value = m ? m.birthOrder || '' : '';
     $('f_father').value = m && m.fatherId ? m.fatherId : '';
+    $('f_mother').value = m && m.motherId ? m.motherId : '';
     $('f_spouse').value = m && m.spouseId ? m.spouseId : '';
     $('f_birth').value = m ? m.birth || '' : '';
     $('f_death').value = m ? m.death || '' : '';
@@ -364,7 +424,24 @@
     $('f_bio').value = m ? m.bio || '' : '';
     fillFormSelects();
     if (m && m.fatherId) $('f_father').value = m.fatherId;
+    if (m && m.motherId) $('f_mother').value = m.motherId;
     if (m && m.spouseId) $('f_spouse').value = m.spouseId;
+    // 多选兄弟
+    if (m && m.brotherIds) {
+      Array.from($('f_brothers').options).forEach(opt => {
+        opt.selected = m.brotherIds.includes(opt.value);
+      });
+    } else {
+      Array.from($('f_brothers').options).forEach(opt => opt.selected = false);
+    }
+    // 多选姐妹
+    if (m && m.sisterIds) {
+      Array.from($('f_sisters').options).forEach(opt => {
+        opt.selected = m.sisterIds.includes(opt.value);
+      });
+    } else {
+      Array.from($('f_sisters').options).forEach(opt => opt.selected = false);
+    }
     updateUIForRole();
     switchPage('add');
   }
@@ -372,19 +449,21 @@
   function submitForm(e) {
     e.preventDefault();
     const id = $('f_id').value;
-    let branch = $('f_branch').value.trim();
-    // 普通用户强制使用自己的房支
-    if (!isAdmin() && state.currentUser && state.currentUser.branch) {
-      branch = state.currentUser.branch;
-    }
+    if (!isAdmin()) { alert('只有管理员可以保存成员'); return; }
+    // 获取多选值
+    const brotherIds = Array.from($('f_brothers').selectedOptions).map(o => o.value).filter(Boolean);
+    const sisterIds = Array.from($('f_sisters').selectedOptions).map(o => o.value).filter(Boolean);
     const data = {
       name: $('f_name').value.trim(),
       alias: $('f_alias').value.trim(),
       gender: $('f_gender').value,
       generation: parseInt($('f_generation').value, 10) || null,
-      branch: branch,
+      birthOrder: $('f_birthOrder').value || null,
       fatherId: $('f_father').value || null,
+      motherId: $('f_mother').value || null,
       spouseId: $('f_spouse').value || null,
+      brotherIds: brotherIds,
+      sisterIds: sisterIds,
       birth: $('f_birth').value.trim(),
       death: $('f_death').value.trim(),
       birthPlace: $('f_birthPlace').value.trim(),
@@ -397,21 +476,41 @@
     if (!data.name) { alert('请填写姓名'); return; }
     if (id) {
       const m = getMember(id);
-      if (!canEditMember(m)) { alert('没有权限'); return; }
+      if (!canEdit()) { alert('没有权限'); return; }
       Object.assign(m, data);
     } else {
       if (data.fatherId === data.id) return;
       data.id = 'm' + Date.now();
       state.family.members.push(data);
     }
-    persist();
+    // 双向同步兄弟关系
+    if (brotherIds.length) {
+      brotherIds.forEach(bid => {
+        const bro = getMember(bid);
+        if (bro) {
+          if (!bro.brotherIds) bro.brotherIds = [];
+          const currentId = id || data.id;
+          if (!bro.brotherIds.includes(currentId)) bro.brotherIds.push(currentId);
+        }
+      });
+    }
+    if (sisterIds.length) {
+      sisterIds.forEach(sid => {
+        const sis = getMember(sid);
+        if (sis) {
+          if (!sis.sisterIds) sis.sisterIds = [];
+          const currentId = id || data.id;
+          if (!sis.sisterIds.includes(currentId)) sis.sisterIds.push(currentId);
+        }
+      });
+    }
+    autoSave();
     switchPage('members');
   }
 
   // ---------- 持久化 ----------
   function persist() {
     saveLocal();
-    setSync('offline', '本地保存');
     refreshAll();
   }
 
@@ -458,7 +557,7 @@
         state.family = data; persist(); e.target.value = '';
       }).catch(err => { alert(err.message); e.target.value = ''; });
     });
-    $('btn_print').addEventListener('click', () => FamilyExport.printFamily({ clan: state.family.clan, members: getVisibleMembers() }));
+    $('btn_print').addEventListener('click', () => FamilyExport.printFamily({ clan: state.family.clan, members: state.family.members }));
     $('btn_resetLocal').addEventListener('click', resetLocal);
     // 暴露 deleteUser 给内联 onclick
     window._app = { deleteUser };
