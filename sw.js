@@ -1,5 +1,5 @@
 // 尹氏家谱 PWA Service Worker - 离线缓存壳页面
-const CACHE = 'yin-family-v3';
+const CACHE = 'yin-family-v4';
 const SHELL = ['/', '/style.css', '/api.js', '/tree.js', '/export.js', '/app.js', '/manifest.json'];
 
 self.addEventListener('install', e => {
