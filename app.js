@@ -79,12 +79,16 @@
   function saveLocal() { localStorage.setItem(LS_KEY, JSON.stringify(state.family)); }
 
   function init() {
-    if (isLoggedIn()) { showApp(); } else { showLogin(); return; }
-    state.family = loadLocal() || defaultFamily();
-    document.title = state.family.clan.name + ' · 家谱';
-    setSync('offline', '本地模式');
-    refreshAll();
     bindEvents();
+    if (isLoggedIn()) {
+      showApp();
+      state.family = loadLocal() || defaultFamily();
+      document.title = state.family.clan.name + ' · 家谱';
+      setSync('offline', '本地模式');
+      refreshAll();
+    } else {
+      showLogin();
+    }
   }
 
   function setSync(cls, text) {
