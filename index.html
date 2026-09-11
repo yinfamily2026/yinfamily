@@ -15,12 +15,13 @@
 </head>
 <body>
 
-<!-- 登录页 -->
+<!-- 登录/注册页 -->
 <div id="loginPage" class="login-page">
   <div class="login-box">
     <div class="login-logo">尹</div>
     <h1 class="login-title">尹氏家谱</h1>
     <p class="login-sub">家族谱系管理系统</p>
+    <!-- 登录表单 -->
     <form id="loginForm" autocomplete="off">
       <div class="login-field">
         <input type="text" id="loginUser" placeholder="请输入用户名" required>
@@ -30,8 +31,25 @@
       </div>
       <button type="submit" class="login-btn">进 入 家 谱</button>
     </form>
-    <p class="login-hint">默认用户名：admin　密码：yin190523</p>
-    <p class="login-hint small">登录后可修改密码</p>
+    <!-- 注册表单 -->
+    <form id="registerForm" autocomplete="off" style="display:none">
+      <div class="login-field">
+        <input type="text" id="regUser" placeholder="设置用户名" required>
+      </div>
+      <div class="login-field">
+        <input type="password" id="regPass" placeholder="设置密码" required>
+      </div>
+      <div class="login-field">
+        <input type="text" id="regBranch" placeholder="所属房支（如：长房）" required>
+      </div>
+      <button type="submit" class="login-btn">注 册</button>
+    </form>
+    <div class="login-switch">
+      <a id="switchToReg" href="javascript:void(0)">没有账号？去注册</a>
+      <a id="switchToLogin" href="javascript:void(0)" style="display:none">已有账号？去登录</a>
+    </div>
+    <p class="login-hint">管理员：admin / yin190523</p>
+    <p class="login-hint small">注册用户只能管理本房支成员</p>
   </div>
 </div>
 
@@ -41,6 +59,7 @@
     <div class="topbar-inner">
       <h1 id="clanTitle">尹氏家族</h1>
       <div class="topbar-right">
+        <span id="userBadge" class="user-badge"></span>
         <span id="syncStatus" class="sync-status" title="数据同步状态">●</span>
         <button class="btn-icon" id="btnLogout" title="退出登录">退出</button>
       </div>
@@ -63,7 +82,7 @@
     <!-- 成员列表 -->
     <section id="page-members" class="page">
       <div class="page-title">
-        <span>成员名录</span>
+        <span id="membersTitle">成员名录</span>
         <button class="btn small" id="btnAddQuick">＋ 新增</button>
       </div>
       <div class="search-bar">
@@ -126,11 +145,15 @@
     <!-- 设置 -->
     <section id="page-settings" class="page">
       <div class="page-title"><span>设置</span></div>
-      <div class="card">
+      <div class="card" id="cardAccount">
         <h3>账号管理</h3>
-        <label class="setting-label">修改用户名 <input type="text" id="s_username" placeholder="用户名"></label>
-        <label class="setting-label">修改密码 <input type="password" id="s_password" placeholder="新密码"></label>
+        <label class="setting-label">用户名 <input type="text" id="s_username" placeholder="用户名"></label>
+        <label class="setting-label">密码 <input type="password" id="s_password" placeholder="新密码"></label>
         <button class="btn" id="btnChangePass">保存账号</button>
+      </div>
+      <div class="card" id="cardUsers">
+        <h3>用户管理 <span class="hint" style="font-size:12px;font-weight:normal">（仅管理员）</span></h3>
+        <div id="userList"></div>
       </div>
       <div class="card">
         <h3>数据备份</h3>
@@ -150,7 +173,7 @@
         <button class="btn danger" id="btn_resetLocal">重置本地数据</button>
         <p class="hint">清空本地缓存数据。</p>
       </div>
-      <div class="about">尹氏家谱 · 移动端族谱管理系统 v2.0</div>
+      <div class="about">尹氏家谱 · 移动端族谱管理系统 v3.0</div>
     </section>
   </main>
 
