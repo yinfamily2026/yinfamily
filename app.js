@@ -1,13 +1,57 @@
-// 尹氏家谱 v4.0 - 主应用逻辑（多用户 + 亲属关系 + 自动保存）
+// 尹氏家谱 v5.0 - 主应用逻辑（云端同步 + 多用户 + 亲属关系）
 (function () {
   const LS_KEY = 'yin_family_tree_data';
   const LS_USERS = 'yin_family_users';
   const LS_SESSION = 'yin_family_session';
+
+  // ---------- Supabase 云端配置 ----------
+  const CLOUD_URL = 'https://khfcmukoxjntzsyfqzwv.supabase.co/rest/v1';
+  const CLOUD_KEY = 'sb_publishable_HRV-ov-TvRFCX_uIWJshDQ_beHbL5sw';
+
   let resetTreeFn = null;
   let autoSaveTimer = null;
+  let cloudSyncing = false;
   const state = { family: null, currentUser: null };
 
   const $ = id => document.getElementById(id);
+
+  // ---------- 云端同步 ----------
+  async function cloudFetch() {
+    try {
+      const res = await fetch(CLOUD_URL + '/family_tree?select=data&id=eq.1', {
+        headers: { apikey: CLOUD_KEY, Authorization: 'Bearer ' + CLOUD_KEY }
+      });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const rows = await res.json();
+      return rows && rows.length ? rows[0].data : null;
+    } catch (e) {
+      console.warn('云端读取失败：', e.message);
+      return null;
+    }
+  }
+
+  async function cloudSave(data) {
+    if (cloudSyncing) return false;
+    cloudSyncing = true;
+    try {
+      const res = await fetch(CLOUD_URL + '/family_tree?id=eq.1', {
+        method: 'PATCH',
+        headers: {
+          apikey: CLOUD_KEY,
+          Authorization: 'Bearer ' + CLOUD_KEY,
+          'Content-Type': 'application/json',
+          Prefer: 'return=minimal'
+        },
+        body: JSON.stringify({ data: data })
+      });
+      return res.ok;
+    } catch (e) {
+      console.warn('云端保存失败：', e.message);
+      return false;
+    } finally {
+      cloudSyncing = false;
+    }
+  }
 
   // ---------- 用户系统 ----------
   // 用户结构：{ user, pass, role: 'admin'|'user' }
@@ -87,8 +131,9 @@
       showApp();
       state.family = loadLocal() || defaultFamily();
       document.title = state.family.clan.name + ' · 家谱';
-      setSync('offline', '已自动保存');
+      setSync('offline', '正在连接云端...');
       refreshAll();
+      loadFromCloud();
     } else {
       alert('用户名或密码不正确');
     }
@@ -111,8 +156,9 @@
     showApp();
     state.family = loadLocal() || defaultFamily();
     document.title = state.family.clan.name + ' · 家谱';
-    setSync('offline', '已自动保存');
+    setSync('offline', '正在连接云端...');
     refreshAll();
+    loadFromCloud();
   }
 
   function handleLogout() {
@@ -233,10 +279,37 @@
     return null;
   }
 
+  // 登录后：先显示本地，再异步拉取云端覆盖
+  async function loadFromCloud() {
+    const cloud = await cloudFetch();
+    if (cloud && cloud.members) {
+      // 云端有数据则优先使用云端
+      if (cloud.members.length || !(state.family.members && state.family.members.length)) {
+        state.family = cloud;
+      } else {
+        // 云端为空但本地有数据，上传本地到云端
+        cloudSave(state.family);
+      }
+      localStorage.setItem(LS_KEY, JSON.stringify(state.family));
+      document.title = state.family.clan.name + ' · 家谱';
+      setSync('online', '云端已同步 ' + new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }));
+      refreshAll();
+      return;
+    }
+    // 云端不可用，保持本地
+    setSync('offline', '本地模式');
+  }
+
   // ---------- 自动保存 ----------
   function saveLocal() {
     localStorage.setItem(LS_KEY, JSON.stringify(state.family));
-    setSync('offline', '已自动保存 ' + new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }));
+    const t = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+    setSync('online', '已保存 ' + t);
+    // 异步上传云端
+    cloudSave(state.family).then(ok => {
+      if (ok) setSync('online', '云端已保存 ' + new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }));
+      else setSync('offline', '已存本地（云端未连接）');
+    });
   }
 
   function autoSave() {
@@ -258,8 +331,9 @@
         showApp();
         state.family = loadLocal() || defaultFamily();
         document.title = state.family.clan.name + ' · 家谱';
-        setSync('offline', '已自动保存');
+        setSync('offline', '正在连接云端...');
         refreshAll();
+        loadFromCloud();
         return;
       }
     }
@@ -290,7 +364,17 @@
 
   function renderMembers() {
     const keyword = ($('searchInput') ? $('searchInput').value : '').trim().toLowerCase();
-    let list = state.family.members.slice().sort((a, b) => (a.generation - b.generation) || a.name.localeCompare(b.name, 'zh'));
+    // 男左女右排序：先按世次，同世次男性在前、女性在后，再按排行
+    let list = state.family.members.slice().sort((a, b) => {
+      const g = (a.generation - b.generation) || 0;
+      if (g !== 0) return g;
+      const gd = (a.gender === '女' ? 1 : 0) - (b.gender === '女' ? 1 : 0);
+      if (gd !== 0) return gd;
+      const oa = parseInt(a.birthOrder, 10) || 99;
+      const ob = parseInt(b.birthOrder, 10) || 99;
+      if (oa !== ob) return oa - ob;
+      return a.name.localeCompare(b.name, 'zh');
+    });
     if (keyword) {
       list = list.filter(m =>
         (m.name || '').toLowerCase().includes(keyword) ||
