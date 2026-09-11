@@ -22,6 +22,18 @@ body { font-family: "PingFang SC","Microsoft YaHei",system-ui,sans-serif; backgr
 .login-btn:active { transform: scale(0.98); }
 .login-hint { font-size: 12px; color: var(--muted); margin-top: 12px; }
 .login-hint.small { font-size: 11px; }
+.login-switch { margin-top: 16px; }
+.login-switch a { font-size: 13px; color: var(--primary); text-decoration: none; }
+.login-switch a:active { opacity: 0.7; }
+
+/* 用户徽章 */
+.user-badge { font-size: 11px; color: #f3e9da; background: rgba(255,255,255,0.15); padding: 3px 8px; border-radius: 10px; }
+.user-badge.admin { background: rgba(255,215,0,0.2); color: #ffd700; }
+
+/* 用户管理列表 */
+.user-item { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.user-item:last-child { border-bottom: none; }
+.user-info b { font-size: 14px; }
 
 /* ===== 主应用 ===== */
 .app-hidden { display: none; }
