@@ -14,7 +14,10 @@
       childrenOf.get(pid).push(m);
     });
     childrenOf.forEach(arr => arr.sort((a, b) => {
-      // 按排行排序
+      // 男左女右：同一父系下，男性排在左、女性排在右
+      const gd = (a.gender === '女' ? 1 : 0) - (b.gender === '女' ? 1 : 0);
+      if (gd !== 0) return gd;
+      // 再按排行
       const oa = parseInt(a.birthOrder, 10) || 99;
       const ob = parseInt(b.birthOrder, 10) || 99;
       if (oa !== ob) return oa - ob;
@@ -92,6 +95,8 @@
     siblingsMap.forEach(bros => {
       if (bros.length < 2) return;
       bros.sort((a, b) => {
+        const gd = (a.gender === '女' ? 1 : 0) - (b.gender === '女' ? 1 : 0);
+        if (gd !== 0) return gd;
         const oa = parseInt(a.birthOrder, 10) || 99;
         const ob = parseInt(b.birthOrder, 10) || 99;
         if (oa !== ob) return oa - ob;
