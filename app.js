@@ -1,50 +1,88 @@
-// 尹氏家谱 - 主应用逻辑
+// 尹氏家谱 v2.0 - 主应用逻辑
 (function () {
   const LS_KEY = 'yin_family_tree_data';
+  const LS_AUTH = 'yin_family_auth';
+  const LS_LOGIN = 'yin_family_logged_in';
   let resetTreeFn = null;
   const state = {
-    family: null,      // { clan, members }
-    serverUrl: FamilyAPI.getServerUrl(),
+    family: null,
     online: false
   };
 
   const $ = id => document.getElementById(id);
 
+  // ---------- 登录系统 ----------
+  function getAuth() {
+    try { return JSON.parse(localStorage.getItem(LS_AUTH)) || { user: 'admin', pass: 'yin190523' }; }
+    catch (e) { return { user: 'admin', pass: 'yin190523' }; }
+  }
+
+  function saveAuth(auth) { localStorage.setItem(LS_AUTH, JSON.stringify(auth)); }
+
+  function isLoggedIn() { return localStorage.getItem(LS_LOGIN) === '1'; }
+
+  function setLoggedIn(v) { v ? localStorage.setItem(LS_LOGIN, '1') : localStorage.removeItem(LS_LOGIN); }
+
+  function showLogin() {
+    $('loginPage').style.display = 'flex';
+    $('app').classList.add('app-hidden');
+  }
+
+  function showApp() {
+    $('loginPage').style.display = 'none';
+    $('app').classList.remove('app-hidden');
+    const auth = getAuth();
+    $('s_username').value = auth.user;
+    $('s_password').value = auth.pass;
+  }
+
+  function handleLogin(e) {
+    e.preventDefault();
+    const user = $('loginUser').value.trim();
+    const pass = $('loginPass').value.trim();
+    const auth = getAuth();
+    if (user === auth.user && pass === auth.pass) {
+      setLoggedIn(true);
+      $('loginUser').value = '';
+      $('loginPass').value = '';
+      showApp();
+      refreshAll();
+    } else {
+      alert('用户名或密码不正确');
+    }
+  }
+
+  function handleLogout() {
+    if (!confirm('确定退出登录吗？')) return;
+    setLoggedIn(false);
+    showLogin();
+  }
+
+  function changePass() {
+    const user = $('s_username').value.trim();
+    const pass = $('s_password').value.trim();
+    if (!user || !pass) { alert('用户名和密码不能为空'); return; }
+    saveAuth({ user, pass });
+    alert('账号信息已保存');
+  }
+
   // ---------- 数据加载 ----------
   function defaultFamily() {
-    return {
-      clan: { name: '尹氏家族', surname: '尹', updatedAt: null },
-      members: []
-    };
+    return { clan: { name: '尹氏家族', surname: '尹', updatedAt: null }, members: [] };
   }
 
   function loadLocal() {
-    try {
-      const raw = localStorage.getItem(LS_KEY);
-      if (raw) return JSON.parse(raw);
-    } catch (e) { /* 忽略损坏数据 */ }
+    try { const raw = localStorage.getItem(LS_KEY); if (raw) return JSON.parse(raw); } catch (e) {}
     return null;
   }
 
-  function saveLocal() {
-    localStorage.setItem(LS_KEY, JSON.stringify(state.family));
-  }
+  function saveLocal() { localStorage.setItem(LS_KEY, JSON.stringify(state.family)); }
 
-  async function init() {
+  function init() {
+    if (isLoggedIn()) { showApp(); } else { showLogin(); return; }
     state.family = loadLocal() || defaultFamily();
     document.title = state.family.clan.name + ' · 家谱';
     setSync('offline', '本地模式');
-
-    if (state.serverUrl) {
-      try {
-        const remote = await FamilyAPI.fetchFamily(state.serverUrl);
-        state.family = remote;
-        saveLocal();
-        setSync('online', '云端同步');
-      } catch (e) {
-        setSync('error', '云端连接失败，使用本地数据');
-      }
-    }
     refreshAll();
     bindEvents();
   }
@@ -72,7 +110,15 @@
   }
 
   function renderMembers() {
-    const list = state.family.members.slice().sort((a, b) => (a.generation - b.generation) || a.name.localeCompare(b.name, 'zh'));
+    const keyword = ($('searchInput') ? $('searchInput').value : '').trim().toLowerCase();
+    let list = state.family.members.slice().sort((a, b) => (a.generation - b.generation) || a.name.localeCompare(b.name, 'zh'));
+    if (keyword) {
+      list = list.filter(m =>
+        (m.name || '').toLowerCase().includes(keyword) ||
+        (m.alias || '').toLowerCase().includes(keyword) ||
+        (m.branch || '').toLowerCase().includes(keyword)
+      );
+    }
     const box = $('memberList');
     if (!list.length) {
       box.innerHTML = '<p class="hint" style="text-align:center;padding:30px 0">暂无成员，点击右上角「＋ 新增」开始续谱</p>';
@@ -80,10 +126,12 @@
     }
     box.innerHTML = list.map(m => {
       const sub = [m.branch && '房支:' + m.branch, m.birth && '生于' + m.birth, m.death && '卒于' + m.death].filter(Boolean).join(' · ');
+      const aliasHtml = m.alias ? `<div class="mi-alias">${m.alias}</div>` : '';
       return `<div class="member-item" data-id="${m.id}">
         <div class="avatar ${m.gender === '女' ? 'female' : ''}">${(m.name || '?').slice(-1)}</div>
         <div class="mi-main">
           <div class="mi-name">${m.name || '未命名'}</div>
+          ${aliasHtml}
           <div class="mi-sub">${sub || '—'}</div>
         </div>
         <span class="mi-gen">${m.generation ? '第' + m.generation + '世' : '世数未定'}</span>
@@ -103,15 +151,19 @@
     const spouse = m.spouseId ? getMember(m.spouseId) : null;
     const father = m.fatherId ? getMember(m.fatherId) : null;
     const rows = [
+      ['曾用名', m.alias],
       ['性别', m.gender],
       ['世次', m.generation ? '第' + m.generation + '世' : ''],
       ['房支', m.branch],
-      ['父', father ? father.name : ''],
+      ['父亲', father ? father.name : ''],
       ['配偶', spouse ? spouse.name : ''],
       ['出生', m.birth],
       ['逝世', m.death],
       ['籍贯', m.birthPlace],
       ['安葬', m.burialPlace],
+      ['手机', m.phone],
+      ['微信', m.wechat],
+      ['住址', m.address],
       ['简介', m.bio]
     ];
     $('m_name').textContent = m.name || '未命名';
@@ -153,6 +205,7 @@
     $('formTitle').textContent = m ? '续谱 · 编辑成员' : '续谱 · 新增成员';
     $('f_id').value = m ? m.id : '';
     $('f_name').value = m ? m.name : '';
+    $('f_alias').value = m ? m.alias || '' : '';
     $('f_gender').value = m ? m.gender : '男';
     $('f_generation').value = m ? m.generation || '' : '';
     $('f_branch').value = m ? m.branch || '' : '';
@@ -162,8 +215,13 @@
     $('f_death').value = m ? m.death || '' : '';
     $('f_birthPlace').value = m ? m.birthPlace || '' : '';
     $('f_burialPlace').value = m ? m.burialPlace || '' : '';
+    $('f_phone').value = m ? m.phone || '' : '';
+    $('f_wechat').value = m ? m.wechat || '' : '';
+    $('f_address').value = m ? m.address || '' : '';
     $('f_bio').value = m ? m.bio || '' : '';
     fillFormSelects();
+    if (m && m.fatherId) $('f_father').value = m.fatherId;
+    if (m && m.spouseId) $('f_spouse').value = m.spouseId;
     switchPage('add');
   }
 
@@ -172,6 +230,7 @@
     const id = $('f_id').value;
     const data = {
       name: $('f_name').value.trim(),
+      alias: $('f_alias').value.trim(),
       gender: $('f_gender').value,
       generation: parseInt($('f_generation').value, 10) || null,
       branch: $('f_branch').value.trim(),
@@ -181,6 +240,9 @@
       death: $('f_death').value.trim(),
       birthPlace: $('f_birthPlace').value.trim(),
       burialPlace: $('f_burialPlace').value.trim(),
+      phone: $('f_phone').value.trim(),
+      wechat: $('f_wechat').value.trim(),
+      address: $('f_address').value.trim(),
       bio: $('f_bio').value.trim()
     };
     if (!data.name) { alert('请填写姓名'); return; }
@@ -188,7 +250,6 @@
       const m = getMember(id);
       Object.assign(m, data);
     } else {
-      // 防止自引用：配偶不能是本人，父亲不能是本人
       if (data.fatherId === data.id) return;
       data.id = 'm' + Date.now();
       state.family.members.push(data);
@@ -197,43 +258,16 @@
     switchPage('members');
   }
 
-  // ---------- 持久化（云端优先，本地兜底） ----------
-  async function persist() {
+  // ---------- 持久化 ----------
+  function persist() {
     saveLocal();
-    if (!state.serverUrl) { setSync('offline', '本地保存'); refreshAll(); return; }
-    try {
-      await FamilyAPI.saveFamily(state.serverUrl, state.family, FamilyAPI.getToken());
-      setSync('online', '云端已同步');
-    } catch (e) {
-      setSync('error', '云端保存失败，已存本地');
-      alert('云端保存失败，数据已保存在本机。请检查网络或服务器地址。');
-    }
+    setSync('offline', '本地保存');
     refreshAll();
   }
 
   // ---------- 设置页 ----------
-  function connectServer() {
-    const url = $('s_server').value.trim();
-    const token = $('s_token').value.trim();
-    if (!url) { alert('请填写服务器地址'); return; }
-    FamilyAPI.setServerUrl(url);
-    FamilyAPI.setToken(token);
-    setSync('offline', '连接中…');
-    FamilyAPI.ping(url).then(() => FamilyAPI.fetchFamily(url)).then(remote => {
-      state.family = remote;
-      saveLocal();
-      state.serverUrl = url;
-      setSync('online', '云端已连接');
-      refreshAll();
-      $('s_connState').textContent = '已连接：' + (remote.clan ? remote.clan.name : '服务器');
-    }).catch(() => {
-      setSync('error', '连接失败');
-      $('s_connState').textContent = '连接失败，请检查地址';
-    });
-  }
-
   function resetLocal() {
-    if (!confirm('将清空本机缓存并从服务器重新加载（若无服务器则清空全部数据）。确定继续？')) return;
+    if (!confirm('将清空本机缓存数据。确定继续？')) return;
     localStorage.removeItem(LS_KEY);
     state.family = defaultFamily();
     saveLocal();
@@ -250,13 +284,16 @@
 
   // ---------- 事件绑定 ----------
   function bindEvents() {
+    $('loginForm').addEventListener('submit', handleLogin);
+    $('btnLogout').addEventListener('click', handleLogout);
+    $('btnChangePass').addEventListener('click', changePass);
     document.querySelectorAll('.tab').forEach(t => {
       t.addEventListener('click', () => switchPage(t.dataset.page));
     });
     $('memberForm').addEventListener('submit', submitForm);
     $('btnCancelForm').addEventListener('click', () => switchPage('members'));
     $('btnAddQuick').addEventListener('click', () => openForm(null));
-    $('btnConnect').addEventListener('click', connectServer);
+    $('searchInput').addEventListener('input', renderMembers);
     $('btn_exportJson').addEventListener('click', () => FamilyExport.exportJSON(state.family));
     $('btn_importJson').addEventListener('change', e => {
       const file = e.target.files[0];

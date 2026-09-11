@@ -1,6 +1,5 @@
-// 尹氏家谱 - 数据导出 / 导入 / 打印
+// 尹氏家谱 v2.0 - 数据导出 / 导入 / 打印
 (function () {
-  // 导出 JSON 备份
   function exportJSON(family) {
     const blob = new Blob([JSON.stringify(family, null, 2)], { type: 'application/json' });
     const a = document.createElement('a');
@@ -14,7 +13,6 @@
     URL.revokeObjectURL(a.href);
   }
 
-  // 从 JSON 文件导入（返回 Promise<family>）
   function importJSON(file) {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -34,7 +32,6 @@
     });
   }
 
-  // 按世次生成纸质谱牒 HTML（用于打印/存 PDF）
   function buildPrintHTML(family) {
     const byGen = new Map();
     family.members
@@ -50,6 +47,7 @@
       html += `<h3>第 ${gen} 世</h3>`;
       list.forEach(m => {
         const parts = [];
+        if (m.alias) parts.push('曾用名 ' + m.alias);
         if (m.gender) parts.push(m.gender);
         if (m.birth) parts.push('生于 ' + m.birth);
         if (m.death) parts.push('卒于 ' + m.death);
@@ -57,6 +55,9 @@
         if (m.burialPlace) parts.push('葬于 ' + m.burialPlace);
         const spouse = m.spouseId ? family.members.find(x => x.id === m.spouseId) : null;
         if (spouse) parts.push('配 ' + spouse.name);
+        if (m.phone) parts.push('电话 ' + m.phone);
+        if (m.wechat) parts.push('微信 ' + m.wechat);
+        if (m.address) parts.push('住址 ' + m.address);
         html += `<div class="p-entry">· ${m.name}${parts.length ? '（' + parts.join('，') + '）' : ''}</div>`;
         if (m.bio) html += `<div class="p-bio">　${m.bio}</div>`;
       });
