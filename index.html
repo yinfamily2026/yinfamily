@@ -7,11 +7,11 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="尹氏家谱">
 <meta name="theme-color" content="#5f3f28">
-<link rel="manifest" href="manifest.json">
+<link rel="manifest" href="manifest.json?v=3">
 <link rel="apple-touch-icon" href="icon-192.png">
 <link rel="icon" type="image/png" href="icon-192.png">
 <title>尹氏家谱</title>
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="style.css?v=3">
 </head>
 <body>
 
@@ -201,13 +201,13 @@
   <div id="printArea"></div>
 </div>
 
-<script src="api.js"></script>
-<script src="tree.js"></script>
-<script src="export.js"></script>
-<script src="app.js"></script>
+<script src="api.js?v=3"></script>
+<script src="tree.js?v=3"></script>
+<script src="export.js?v=3"></script>
+<script src="app.js?v=3"></script>
 <script>
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js?v=3').catch(() => {}));
 }
 </script>
 </body>
