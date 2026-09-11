@@ -7,11 +7,11 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="尹氏家谱">
 <meta name="theme-color" content="#5f3f28">
-<link rel="manifest" href="manifest.json?v=3">
+<link rel="manifest" href="manifest.json?v=4">
 <link rel="apple-touch-icon" href="icon-192.png">
 <link rel="icon" type="image/png" href="icon-192.png">
 <title>尹氏家谱</title>
-<link rel="stylesheet" href="style.css?v=3">
+<link rel="stylesheet" href="style.css?v=4">
 </head>
 <body>
 
@@ -39,17 +39,13 @@
       <div class="login-field">
         <input type="password" id="regPass" placeholder="设置密码" required>
       </div>
-      <div class="login-field">
-        <input type="text" id="regBranch" placeholder="所属房支（如：长房）" required>
-      </div>
       <button type="submit" class="login-btn">注 册</button>
     </form>
     <div class="login-switch">
       <a id="switchToReg" href="javascript:void(0)">没有账号？去注册</a>
       <a id="switchToLogin" href="javascript:void(0)" style="display:none">已有账号？去登录</a>
     </div>
-    <p class="login-hint">管理员：admin / yin190523</p>
-    <p class="login-hint small">注册用户只能管理本房支成员</p>
+    <p class="login-hint small">注册用户可查看和续谱，管理员可管理全部</p>
   </div>
 </div>
 
@@ -86,7 +82,7 @@
         <button class="btn small" id="btnAddQuick">＋ 新增</button>
       </div>
       <div class="search-bar">
-        <input type="text" id="searchInput" placeholder="搜索姓名 / 曾用名 / 房支...">
+        <input type="text" id="searchInput" placeholder="搜索姓名 / 曾用名 / 世次...">
       </div>
       <div id="memberList"></div>
     </section>
@@ -106,16 +102,38 @@
               <option value="女">女</option>
             </select>
           </label>
-          <label>世数（第几世） <input type="number" id="f_generation" min="1" placeholder="如 5"></label>
-          <label>房支 <input type="text" id="f_branch" placeholder="如：长房 / 二房"></label>
+          <label>世次（第几世） <input type="number" id="f_generation" min="1" placeholder="如 5"></label>
+          <label>排行
+            <select id="f_birthOrder">
+              <option value="">— 不指定 —</option>
+              <option value="1">长子</option>
+              <option value="2">次子</option>
+              <option value="3">三子</option>
+              <option value="4">四子</option>
+              <option value="5">五子</option>
+              <option value="6">六子</option>
+              <option value="7">七子</option>
+              <option value="8">八子</option>
+              <option value="9">九子</option>
+            </select>
+          </label>
         </div>
         <div class="form-section">
           <h3 class="form-section-title">亲属关系</h3>
           <label>父亲
-            <select id="f_father"><option value="">— 无（始祖/配偶） —</option></select>
+            <select id="f_father"><option value="">— 无（始祖） —</option></select>
           </label>
-          <label>配偶
+          <label>母亲
+            <select id="f_mother"><option value="">— 无 —</option></select>
+          </label>
+          <label>配偶（妻/夫）
             <select id="f_spouse"><option value="">— 无 —</option></select>
+          </label>
+          <label>兄弟（可多选）
+            <select id="f_brothers" multiple size="3"></select>
+          </label>
+          <label>姐妹（可多选）
+            <select id="f_sisters" multiple size="3"></select>
           </label>
         </div>
         <div class="form-section">
@@ -173,7 +191,7 @@
         <button class="btn danger" id="btn_resetLocal">重置本地数据</button>
         <p class="hint">清空本地缓存数据。</p>
       </div>
-      <div class="about">尹氏家谱 · 移动端族谱管理系统 v3.0</div>
+      <div class="about">尹氏家谱 · 移动端族谱管理系统 v4.0</div>
     </section>
   </main>
 
@@ -201,13 +219,13 @@
   <div id="printArea"></div>
 </div>
 
-<script src="api.js?v=3"></script>
-<script src="tree.js?v=3"></script>
-<script src="export.js?v=3"></script>
-<script src="app.js?v=3"></script>
+<script src="api.js?v=4"></script>
+<script src="tree.js?v=4"></script>
+<script src="export.js?v=4"></script>
+<script src="app.js?v=4"></script>
 <script>
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js?v=3').catch(() => {}));
+  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js?v=4').catch(() => {}));
 }
 </script>
 </body>
