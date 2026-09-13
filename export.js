@@ -1,4 +1,4 @@
-// 尹氏家谱 v2.0 - 数据导出 / 导入 / 打印
+// 尹氏家谱 v6.0 - 数据导出 / 导入 / 打印
 (function () {
   function exportJSON(family) {
     const blob = new Blob([JSON.stringify(family, null, 2)], { type: 'application/json' });
@@ -54,8 +54,11 @@
         if (m.birthPlace) parts.push('籍贯 ' + m.birthPlace);
         if (m.burialPlace) parts.push('葬于 ' + m.burialPlace);
         const spouse = m.spouseId ? family.members.find(x => x.id === m.spouseId) : null;
-        if (spouse) parts.push('配 ' + spouse.name);
-        if (m.phone) parts.push('电话 ' + m.phone);
+        const exSpouse = m.exSpouseId ? family.members.find(x => x.id === m.exSpouseId) : null;
+        if (exSpouse) parts.push('前配 ' + exSpouse.name);
+        if (spouse) parts.push('现配 ' + spouse.name);
+        const maritalMap = { married: '已婚', divorced: '已离异', remarried: '再婚', widowed: '丧偶' };
+        if (m.marital && maritalMap[m.marital]) parts.push(maritalMap[m.marital]);
         if (m.wechat) parts.push('微信 ' + m.wechat);
         if (m.address) parts.push('住址 ' + m.address);
         html += `<div class="p-entry">· ${m.name}${parts.length ? '（' + parts.join('，') + '）' : ''}</div>`;
