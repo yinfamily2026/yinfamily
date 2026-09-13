@@ -1,4 +1,4 @@
-// 尹氏家谱 v6.0 - 主应用逻辑（云端同步 + 家族密码 + 离异/现配）
+﻿// 尹氏家谱 v7.0 - 主应用逻辑（云端同步 + 家族密码 + 离异/现配）
 (function () {
   const LS_KEY = 'yin_family_tree_data';
   const LS_USERS = 'yin_family_users';
@@ -250,7 +250,7 @@
   }
 
   // ---------- 权限 ----------
-  function canEdit() { return isAdmin(); }
+  function canEdit() { return !!state.currentUser; }
   function canAdd() { return !!state.currentUser; }
 
   // ---------- 排行选项动态生成 ----------
@@ -542,7 +542,7 @@
 
   function openForm(id) {
     const m = id ? getMember(id) : null;
-    if (id && m && !canEdit()) { alert('只有管理员可以编辑成员'); return; }
+    if (id && m && !canEdit()) { alert('请先登录'); return; }
     if (!id && !canAdd()) { alert('请先登录'); return; }
     $('formTitle').textContent = m ? '续谱 · 编辑成员' : '续谱 · 新增成员';
     $('f_id').value = m ? m.id : '';
@@ -586,7 +586,7 @@
   function submitForm(e) {
     e.preventDefault();
     const id = $('f_id').value;
-    if (!isAdmin()) { alert('只有管理员可以保存成员'); return; }
+    if (!state.currentUser) { alert('请先登录后再续谱'); return; }
     const brotherIds = Array.from($('f_brothers').selectedOptions).map(o => o.value).filter(Boolean);
     const sisterIds = Array.from($('f_sisters').selectedOptions).map(o => o.value).filter(Boolean);
     const data = {
