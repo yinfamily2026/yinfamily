@@ -1,9 +1,8 @@
-// 尹氏家谱 v4.0 - 世系树渲染（SVG，支持缩放/拖动/点击查看）
+// 尹氏家谱 v6.0 - 世系树渲染（男左女右 + 离异/现配 + 自动排序）
 (function () {
   const COL_W = 132, ROW_H = 100, NODE_W = 112, NODE_H = 50;
   const MIN_SCALE = 0.3, MAX_SCALE = 3;
 
-  // 构建树结构并按"子树叶子数"布局坐标
   function layout(members) {
     const byId = new Map();
     members.forEach(m => byId.set(m.id, m));
@@ -14,10 +13,8 @@
       childrenOf.get(pid).push(m);
     });
     childrenOf.forEach(arr => arr.sort((a, b) => {
-      // 男左女右：同一父系下，男性排在左、女性排在右
       const gd = (a.gender === '女' ? 1 : 0) - (b.gender === '女' ? 1 : 0);
       if (gd !== 0) return gd;
-      // 再按排行
       const oa = parseInt(a.birthOrder, 10) || 99;
       const ob = parseInt(b.birthOrder, 10) || 99;
       if (oa !== ob) return oa - ob;
@@ -52,7 +49,6 @@
     return { members, byId, childrenOf, roots, pos, totalW: Math.max(origin, 1), totalH: maxDepth + 1 };
   }
 
-  // 渲染整棵树到 svg，onSelect(id) 为节点点击回调
   function render(svg, data, onSelect) {
     const L = layout(data.members);
     const W = L.totalW * COL_W, H = L.totalH * ROW_H;
@@ -71,7 +67,7 @@
       centers.push({ m, x: p.x * COL_W, y: p.y * ROW_H });
     }
 
-    // 父子连线（先画线，节点后画覆盖）
+    // 父子连线
     for (const { m, x, y } of centers) {
       if (m.fatherId && L.byId.has(m.fatherId) && L.pos[m.fatherId]) {
         const fp = L.pos[m.fatherId];
@@ -84,7 +80,7 @@
       }
     }
 
-    // 兄弟横线（同父兄弟之间画水平连线）
+    // 兄弟横线
     const siblingsMap = new Map();
     for (const { m } of centers) {
       if (m.fatherId) {
@@ -107,7 +103,6 @@
         if (!a || !b) continue;
         const ax = a.x * COL_W, bx = b.x * COL_W;
         const ay = a.y * ROW_H, by = b.y * ROW_H;
-        // 只在同一行画兄弟线
         if (Math.abs(ay - by) < 5) {
           const ln = document.createElementNS(NS, 'line');
           ln.setAttribute('x1', ax + NODE_W / 2);
@@ -120,10 +115,9 @@
       }
     });
 
-    // 配偶横线（夫妻之间画连线）
+    // 现配连线（实线）
     for (const { m, x, y } of centers) {
       if (m.spouseId && L.byId.has(m.spouseId) && L.pos[m.spouseId]) {
-        // 只画一次（避免双向重复）
         if (m.id < m.spouseId) {
           const sp = L.pos[m.spouseId];
           const sx = sp.x * COL_W, sy = sp.y * ROW_H;
@@ -140,6 +134,25 @@
       }
     }
 
+    // 原配连线（虚线，离异/前配不分开）
+    for (const { m, x, y } of centers) {
+      if (m.exSpouseId && L.byId.has(m.exSpouseId) && L.pos[m.exSpouseId]) {
+        if (m.id < m.exSpouseId) {
+          const ex = L.pos[m.exSpouseId];
+          const exX = ex.x * COL_W, exY = ex.y * ROW_H;
+          if (Math.abs(y - exY) < 5) {
+            const ln = document.createElementNS(NS, 'line');
+            ln.setAttribute('x1', x + NODE_W / 2);
+            ln.setAttribute('y1', y + NODE_H / 2);
+            ln.setAttribute('x2', exX - NODE_W / 2);
+            ln.setAttribute('y2', exY + NODE_H / 2);
+            ln.setAttribute('class', 'link-line ex-spouse-line');
+            g.appendChild(ln);
+          }
+        }
+      }
+    }
+
     // 节点
     for (const { m, x, y } of centers) {
       const rx = x - NODE_W / 2, ry = y;
@@ -150,8 +163,6 @@
       rect.style.cursor = 'pointer';
       g.appendChild(rect);
 
-      // 排行称呼
-      const orderNames = ['', '长', '次', '三', '四', '五', '六', '七', '八', '九'];
       const maleNames = ['', '长子', '次子', '三子', '四子', '五子', '六子', '七子', '八子', '九子'];
       const femaleNames = ['', '长女', '次女', '三女', '四女', '五女', '六女', '七女', '八女', '九女'];
       let orderLabel = '';
@@ -166,20 +177,18 @@
       t1.textContent = m.name || '未命名';
       g.appendChild(t1);
 
-      // 第二行：排行或配偶
+      // 第二行：排行 + 配偶信息
       const t2 = document.createElementNS(NS, 'text');
       t2.setAttribute('x', x); t2.setAttribute('y', ry + 39);
       t2.setAttribute('class', 'node-sub');
       const spouse = m.spouseId && L.byId.get(m.spouseId) ? L.byId.get(m.spouseId).name : '';
-      if (orderLabel && spouse) {
-        t2.textContent = orderLabel + ' · 配' + spouse;
-      } else if (orderLabel) {
-        t2.textContent = orderLabel;
-      } else if (spouse) {
-        t2.textContent = '配 ' + spouse;
-      } else {
-        t2.textContent = (m.generation ? '第' + m.generation + '世' : '');
-      }
+      const exSpouse = m.exSpouseId && L.byId.get(m.exSpouseId) ? L.byId.get(m.exSpouseId).name : '';
+      let subText = '';
+      if (orderLabel) subText = orderLabel;
+      if (spouse) subText += (subText ? ' · ' : '') + '配' + spouse;
+      if (exSpouse) subText += (subText ? ' · ' : '') + '前配' + exSpouse;
+      if (!subText) subText = (m.generation ? '第' + m.generation + '世' : '');
+      t2.textContent = subText;
       g.appendChild(t2);
 
       rect.addEventListener('click', () => onSelect && onSelect(m.id));
@@ -197,7 +206,6 @@
     return g;
   }
 
-  // 挂载缩放/拖动交互（返回复位函数）
   function enablePanZoom(wrap, svg) {
     let scale = 1, tx = 0, ty = 0;
     let dragging = false, lastX = 0, lastY = 0, pinchDist = 0;
@@ -239,7 +247,6 @@
 
     wrap.addEventListener('touchend', () => { dragging = false; }, { passive: true });
 
-    // 桌面端拖动
     svg.addEventListener('mousedown', e => {
       if (e.target.tagName === 'rect') return;
       dragging = true; lastX = e.clientX; lastY = e.clientY;
