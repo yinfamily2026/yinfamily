@@ -1,12 +1,17 @@
-// 尹氏家谱 v5.0 - 主应用逻辑（云端同步 + 多用户 + 亲属关系）
+// 尹氏家谱 v6.0 - 主应用逻辑（云端同步 + 家族密码 + 离异/现配）
 (function () {
   const LS_KEY = 'yin_family_tree_data';
   const LS_USERS = 'yin_family_users';
   const LS_SESSION = 'yin_family_session';
+  const LS_GATE = 'yin_family_gate_passed';
+  const LS_GATE_PASS = 'yin_family_gate_pass';
 
   // ---------- Supabase 云端配置 ----------
   const CLOUD_URL = 'https://khfcmukoxjntzsyfqzwv.supabase.co/rest/v1';
   const CLOUD_KEY = 'sb_publishable_HRV-ov-TvRFCX_uIWJshDQ_beHbL5sw';
+
+  // 默认家族访问密码
+  const DEFAULT_GATE_PASS = 'yin2026';
 
   let resetTreeFn = null;
   let autoSaveTimer = null;
@@ -14,6 +19,43 @@
   const state = { family: null, currentUser: null };
 
   const $ = id => document.getElementById(id);
+
+  // ---------- 家族访问密码门 ----------
+  function getGatePass() {
+    return localStorage.getItem(LS_GATE_PASS) || DEFAULT_GATE_PASS;
+  }
+
+  function isGatePassed() {
+    return localStorage.getItem(LS_GATE) === 'yes';
+  }
+
+  function showGate() {
+    $('gatePage').style.display = 'flex';
+    $('loginPage').style.display = 'none';
+    $('app').classList.add('app-hidden');
+  }
+
+  function handleGate(e) {
+    e.preventDefault();
+    const pass = $('gatePass').value.trim();
+    if (pass === getGatePass()) {
+      localStorage.setItem(LS_GATE, 'yes');
+      $('gatePass').value = '';
+      $('gatePage').style.display = 'none';
+      showLogin();
+    } else {
+      alert('访问密码不正确');
+    }
+  }
+
+  function changeGatePass() {
+    if (!isAdmin()) { alert('只有管理员可以修改访问密码'); return; }
+    const pass = $('s_gatePass').value.trim();
+    if (!pass) { alert('请输入新密码'); return; }
+    localStorage.setItem(LS_GATE_PASS, pass);
+    alert('家族访问密码已更新');
+    $('s_gatePass').value = '';
+  }
 
   // ---------- 云端同步 ----------
   async function cloudFetch() {
@@ -54,7 +96,6 @@
   }
 
   // ---------- 用户系统 ----------
-  // 用户结构：{ user, pass, role: 'admin'|'user' }
   function getUsers() {
     try {
       const users = JSON.parse(localStorage.getItem(LS_USERS));
@@ -75,6 +116,7 @@
 
   // ---------- 登录/注册 ----------
   function showLogin() {
+    $('gatePage').style.display = 'none';
     $('loginPage').style.display = 'flex';
     $('app').classList.add('app-hidden');
     showLoginForm();
@@ -95,6 +137,7 @@
   }
 
   function showApp() {
+    $('gatePage').style.display = 'none';
     $('loginPage').style.display = 'none';
     $('app').classList.remove('app-hidden');
     updateUIForRole();
@@ -105,11 +148,9 @@
     const u = state.currentUser;
     $('userBadge').textContent = u.role === 'admin' ? '管理员' : '族人';
     $('userBadge').className = 'user-badge' + (u.role === 'admin' ? ' admin' : '');
-
-    // 管理员能看到所有功能，普通用户隐藏用户管理和账号管理
     $('cardUsers').style.display = isAdmin() ? '' : 'none';
     $('cardAccount').style.display = isAdmin() ? '' : 'none';
-
+    $('cardGate').style.display = isAdmin() ? '' : 'none';
     if (isAdmin()) {
       $('s_username').value = u.user;
       $('s_password').value = u.pass;
@@ -212,6 +253,21 @@
   function canEdit() { return isAdmin(); }
   function canAdd() { return !!state.currentUser; }
 
+  // ---------- 排行选项动态生成 ----------
+  function updateBirthOrderOptions() {
+    const gender = $('f_gender').value;
+    const sel = $('f_birthOrder');
+    const currentVal = sel.value;
+    let opts = '<option value="">— 不指定 —</option>';
+    if (gender === '女') {
+      opts += '<option value="1">长女</option><option value="2">次女</option><option value="3">三女</option><option value="4">四女</option><option value="5">五女</option><option value="6">六女</option><option value="7">七女</option><option value="8">八女</option><option value="9">九女</option>';
+    } else {
+      opts += '<option value="1">长子</option><option value="2">次子</option><option value="3">三子</option><option value="4">四子</option><option value="5">五子</option><option value="6">六子</option><option value="7">七子</option><option value="8">八子</option><option value="9">九子</option>';
+    }
+    sel.innerHTML = opts;
+    sel.value = currentVal;
+  }
+
   // ---------- 传统称呼计算 ----------
   function getBirthOrderName(member) {
     if (!member.birthOrder) return '';
@@ -223,17 +279,15 @@
     return names[order] || '';
   }
 
-  // 获取某成员的兄弟
+  // ---------- 亲属关系获取 ----------
   function getBrothers(member) {
     if (!member) return [];
     const all = state.family.members;
-    // 通过兄弟ID列表
     const byId = new Map(all.map(m => [m.id, m]));
     let bros = [];
     if (member.brotherIds && member.brotherIds.length) {
       bros = member.brotherIds.map(id => byId.get(id)).filter(Boolean);
     }
-    // 也通过共同父亲查找
     if (member.fatherId) {
       all.forEach(m => {
         if (m.id !== member.id && m.fatherId === member.fatherId && m.gender !== '女' && !bros.find(b => b.id === m.id)) {
@@ -244,7 +298,6 @@
     return bros;
   }
 
-  // 获取某成员的姐妹
   function getSisters(member) {
     if (!member) return [];
     const all = state.family.members;
@@ -263,7 +316,6 @@
     return sis;
   }
 
-  // 获取子女
   function getChildren(member) {
     if (!member) return [];
     return state.family.members.filter(m => m.fatherId === member.id || m.motherId === member.id);
@@ -279,15 +331,12 @@
     return null;
   }
 
-  // 登录后：先显示本地，再异步拉取云端覆盖
   async function loadFromCloud() {
     const cloud = await cloudFetch();
     if (cloud && cloud.members) {
-      // 云端有数据则优先使用云端
       if (cloud.members.length || !(state.family.members && state.family.members.length)) {
         state.family = cloud;
       } else {
-        // 云端为空但本地有数据，上传本地到云端
         cloudSave(state.family);
       }
       localStorage.setItem(LS_KEY, JSON.stringify(state.family));
@@ -296,7 +345,6 @@
       refreshAll();
       return;
     }
-    // 云端不可用，保持本地
     setSync('offline', '本地模式');
   }
 
@@ -305,7 +353,6 @@
     localStorage.setItem(LS_KEY, JSON.stringify(state.family));
     const t = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
     setSync('online', '已保存 ' + t);
-    // 异步上传云端
     cloudSave(state.family).then(ok => {
       if (ok) setSync('online', '云端已保存 ' + new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }));
       else setSync('offline', '已存本地（云端未连接）');
@@ -320,8 +367,14 @@
     }, 800);
   }
 
+  // ---------- 初始化 ----------
   function init() {
     bindEvents();
+    // 先检查家族访问密码门
+    if (!isGatePassed()) {
+      showGate();
+      return;
+    }
     const session = getSession();
     if (session) {
       const users = getUsers();
@@ -357,14 +410,20 @@
   function renderTree() {
     const svg = $('treeSvg');
     const wrap = $('treeWrap');
-    Tree.render(svg, { clan: state.family.clan, members: state.family.members }, id => openMember(id));
+    // 世系自动排序：按 generation 排序后再传给 Tree
+    const sortedMembers = state.family.members.slice().sort((a, b) => {
+      const ga = a.generation || 99;
+      const gb = b.generation || 99;
+      if (ga !== gb) return ga - gb;
+      return a.name.localeCompare(b.name, 'zh');
+    });
+    Tree.render(svg, { clan: state.family.clan, members: sortedMembers }, id => openMember(id));
     resetTreeFn = Tree.enablePanZoom(wrap, svg);
     $('btnResetTree').onclick = () => resetTreeFn && resetTreeFn();
   }
 
   function renderMembers() {
     const keyword = ($('searchInput') ? $('searchInput').value : '').trim().toLowerCase();
-    // 男左女右排序：先按世次，同世次男性在前、女性在后，再按排行
     let list = state.family.members.slice().sort((a, b) => {
       const g = (a.generation - b.generation) || 0;
       if (g !== 0) return g;
@@ -389,11 +448,7 @@
     }
     box.innerHTML = list.map(m => {
       const orderName = getBirthOrderName(m);
-      const sub = [
-        orderName,
-        m.birth && '生于' + m.birth,
-        m.death && '卒于' + m.death
-      ].filter(Boolean).join(' · ');
+      const sub = [orderName, m.birth && '生于' + m.birth, m.death && '卒于' + m.death].filter(Boolean).join(' · ');
       const aliasHtml = m.alias ? `<div class="mi-alias">${m.alias}</div>` : '';
       return `<div class="member-item" data-id="${m.id}">
         <div class="avatar ${m.gender === '女' ? 'female' : ''}">${(m.name || '?').slice(-1)}</div>
@@ -417,12 +472,14 @@
     const m = getMember(id);
     if (!m) return;
     const spouse = m.spouseId ? getMember(m.spouseId) : null;
+    const exSpouse = m.exSpouseId ? getMember(m.exSpouseId) : null;
     const father = m.fatherId ? getMember(m.fatherId) : null;
     const mother = m.motherId ? getMember(m.motherId) : null;
     const brothers = getBrothers(m);
     const sisters = getSisters(m);
     const children = getChildren(m);
     const orderName = getBirthOrderName(m);
+    const maritalMap = { married: '已婚', divorced: '已离异', remarried: '再婚', widowed: '丧偶' };
 
     const rows = [
       ['曾用名', m.alias], ['性别', m.gender],
@@ -430,14 +487,15 @@
       ['排行', orderName],
       ['父亲', father ? father.name : ''],
       ['母亲', mother ? mother.name : ''],
-      ['配偶', spouse ? spouse.name : ''],
+      ['原配', exSpouse ? exSpouse.name : ''],
+      ['现配', spouse ? spouse.name : ''],
+      ['婚姻', maritalMap[m.marital] || ''],
       ['兄弟', brothers.length ? brothers.map(b => b.name).join('、') : ''],
       ['姐妹', sisters.length ? sisters.map(s => s.name).join('、') : ''],
       ['子女', children.length ? children.map(c => c.name).join('、') : ''],
       ['出生', m.birth], ['逝世', m.death],
       ['籍贯', m.birthPlace], ['安葬', m.burialPlace],
-      ['手机', m.phone], ['微信', m.wechat],
-      ['住址', m.address], ['简介', m.bio]
+      ['微信', m.wechat], ['住址', m.address], ['简介', m.bio]
     ];
     $('m_name').textContent = m.name || '未命名';
     $('m_info').innerHTML = rows.filter(r => r[1]).map(r => `<div class="mi-row"><span class="mi-k">${r[0]}</span><span class="mi-v">${r[1]}</span></div>`).join('');
@@ -459,6 +517,7 @@
       if (x.fatherId === id) x.fatherId = null;
       if (x.motherId === id) x.motherId = null;
       if (x.spouseId === id) x.spouseId = null;
+      if (x.exSpouseId === id) x.exSpouseId = null;
       if (x.brotherIds) x.brotherIds = x.brotherIds.filter(b => b !== id);
       if (x.sisterIds) x.sisterIds = x.sisterIds.filter(s => s !== id);
     });
@@ -472,15 +531,12 @@
     const males = all.filter(m => m.gender !== '女');
     const females = all.filter(m => m.gender === '女');
     const sortFn = (a, b) => (a.generation - b.generation) || a.name.localeCompare(b.name, 'zh');
-
     const allOpts = all.slice().sort(sortFn).map(m => `<option value="${m.id}">第${m.generation || '?'}世 ${m.name}</option>`).join('');
     $('f_father').innerHTML = '<option value="">— 无（始祖） —</option>' + males.slice().sort(sortFn).map(m => `<option value="${m.id}">第${m.generation || '?'}世 ${m.name}</option>`).join('');
     $('f_mother').innerHTML = '<option value="">— 无 —</option>' + females.slice().sort(sortFn).map(m => `<option value="${m.id}">第${m.generation || '?'}世 ${m.name}</option>`).join('');
     $('f_spouse').innerHTML = '<option value="">— 无 —</option>' + allOpts;
-
-    // 兄弟列表（男性）
+    $('f_exSpouse').innerHTML = '<option value="">— 无 —</option>' + allOpts;
     $('f_brothers').innerHTML = males.slice().sort(sortFn).map(m => `<option value="${m.id}">第${m.generation || '?'}世 ${m.name}</option>`).join('');
-    // 姐妹列表（女性）
     $('f_sisters').innerHTML = females.slice().sort(sortFn).map(m => `<option value="${m.id}">第${m.generation || '?'}世 ${m.name}</option>`).join('');
   }
 
@@ -494,15 +550,17 @@
     $('f_alias').value = m ? m.alias || '' : '';
     $('f_gender').value = m ? m.gender : '男';
     $('f_generation').value = m ? m.generation || '' : '';
+    updateBirthOrderOptions();
     $('f_birthOrder').value = m ? m.birthOrder || '' : '';
     $('f_father').value = m && m.fatherId ? m.fatherId : '';
     $('f_mother').value = m && m.motherId ? m.motherId : '';
     $('f_spouse').value = m && m.spouseId ? m.spouseId : '';
+    $('f_exSpouse').value = m && m.exSpouseId ? m.exSpouseId : '';
+    $('f_marital').value = m && m.marital ? m.marital : '';
     $('f_birth').value = m ? m.birth || '' : '';
     $('f_death').value = m ? m.death || '' : '';
     $('f_birthPlace').value = m ? m.birthPlace || '' : '';
     $('f_burialPlace').value = m ? m.burialPlace || '' : '';
-    $('f_phone').value = m ? m.phone || '' : '';
     $('f_wechat').value = m ? m.wechat || '' : '';
     $('f_address').value = m ? m.address || '' : '';
     $('f_bio').value = m ? m.bio || '' : '';
@@ -510,19 +568,14 @@
     if (m && m.fatherId) $('f_father').value = m.fatherId;
     if (m && m.motherId) $('f_mother').value = m.motherId;
     if (m && m.spouseId) $('f_spouse').value = m.spouseId;
-    // 多选兄弟
+    if (m && m.exSpouseId) $('f_exSpouse').value = m.exSpouseId;
     if (m && m.brotherIds) {
-      Array.from($('f_brothers').options).forEach(opt => {
-        opt.selected = m.brotherIds.includes(opt.value);
-      });
+      Array.from($('f_brothers').options).forEach(opt => opt.selected = m.brotherIds.includes(opt.value));
     } else {
       Array.from($('f_brothers').options).forEach(opt => opt.selected = false);
     }
-    // 多选姐妹
     if (m && m.sisterIds) {
-      Array.from($('f_sisters').options).forEach(opt => {
-        opt.selected = m.sisterIds.includes(opt.value);
-      });
+      Array.from($('f_sisters').options).forEach(opt => opt.selected = m.sisterIds.includes(opt.value));
     } else {
       Array.from($('f_sisters').options).forEach(opt => opt.selected = false);
     }
@@ -534,7 +587,6 @@
     e.preventDefault();
     const id = $('f_id').value;
     if (!isAdmin()) { alert('只有管理员可以保存成员'); return; }
-    // 获取多选值
     const brotherIds = Array.from($('f_brothers').selectedOptions).map(o => o.value).filter(Boolean);
     const sisterIds = Array.from($('f_sisters').selectedOptions).map(o => o.value).filter(Boolean);
     const data = {
@@ -546,13 +598,14 @@
       fatherId: $('f_father').value || null,
       motherId: $('f_mother').value || null,
       spouseId: $('f_spouse').value || null,
+      exSpouseId: $('f_exSpouse').value || null,
+      marital: $('f_marital').value || null,
       brotherIds: brotherIds,
       sisterIds: sisterIds,
       birth: $('f_birth').value.trim(),
       death: $('f_death').value.trim(),
       birthPlace: $('f_birthPlace').value.trim(),
       burialPlace: $('f_burialPlace').value.trim(),
-      phone: $('f_phone').value.trim(),
       wechat: $('f_wechat').value.trim(),
       address: $('f_address').value.trim(),
       bio: $('f_bio').value.trim()
@@ -563,7 +616,6 @@
       if (!canEdit()) { alert('没有权限'); return; }
       Object.assign(m, data);
     } else {
-      if (data.fatherId === data.id) return;
       data.id = 'm' + Date.now();
       state.family.members.push(data);
     }
@@ -618,12 +670,15 @@
 
   // ---------- 事件绑定 ----------
   function bindEvents() {
+    $('gateForm').addEventListener('submit', handleGate);
     $('loginForm').addEventListener('submit', handleLogin);
     $('registerForm').addEventListener('submit', handleRegister);
     $('switchToReg').addEventListener('click', showRegisterForm);
     $('switchToLogin').addEventListener('click', showLoginForm);
     $('btnLogout').addEventListener('click', handleLogout);
     $('btnChangePass').addEventListener('click', changePass);
+    $('btnChangeGate').addEventListener('click', changeGatePass);
+    $('f_gender').addEventListener('change', updateBirthOrderOptions);
     document.querySelectorAll('.tab').forEach(t => {
       t.addEventListener('click', () => switchPage(t.dataset.page));
     });
@@ -643,7 +698,6 @@
     });
     $('btn_print').addEventListener('click', () => FamilyExport.printFamily({ clan: state.family.clan, members: state.family.members }));
     $('btn_resetLocal').addEventListener('click', resetLocal);
-    // 暴露 deleteUser 给内联 onclick
     window._app = { deleteUser };
   }
 
