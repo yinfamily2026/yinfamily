@@ -45,6 +45,7 @@ body { font-family: "PingFang SC","Microsoft YaHei",system-ui,sans-serif; backgr
 /* 兄弟连线样式 */
 .sibling-line { stroke: #c4a87a; stroke-dasharray: 4,3; }
 .spouse-line { stroke: #d49a8a; stroke-width: 1.8; }
+.ex-spouse-line { stroke: #b0a0a0; stroke-width: 1.2; stroke-dasharray: 6,4; }
 
 /* ===== 主应用 ===== */
 .app-hidden { display: none; }
