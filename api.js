@@ -1,4 +1,4 @@
-// 尹氏家谱 - 云端 API 通信封装
+﻿// 清平哨尹氏族谱 - 云端 API 通信封装
 (function () {
   const LS_KEY = 'yin_family_server';
   const LS_TOKEN = 'yin_family_token';
