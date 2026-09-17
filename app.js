@@ -1,4 +1,4 @@
-﻿// 尹氏家谱 v7.0 - 主应用逻辑（云端同步 + 家族密码 + 离异/现配）
+﻿// 清平哨尹氏族谱 v9.0 - 主应用逻辑（云端同步 + 家族密码 + 离异/现配）
 (function () {
   const LS_KEY = 'yin_family_tree_data';
   const LS_USERS = 'yin_family_users';
@@ -323,7 +323,7 @@
 
   // ---------- 数据加载 ----------
   function defaultFamily() {
-    return { clan: { name: '尹氏家族', surname: '尹', updatedAt: null }, members: [] };
+    return { clan: { name: '清平哨尹氏', surname: '尹', updatedAt: null }, members: [] };
   }
 
   function loadLocal() {
