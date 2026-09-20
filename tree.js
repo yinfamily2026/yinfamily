@@ -1,4 +1,4 @@
-﻿// 清平哨尹氏族谱 v9.0 - 世系树渲染（夫妻同框不分开 + 男左女右 + 前配虚线 + 自动排序）
+﻿// 清平哨尹氏族谱 v10 - 世系树渲染（夫妻同框不分开 + 男左女右 + 前配虚线 + 自动排序）
 (function () {
   const COL_W = 140, ROW_H = 100, NODE_W = 120, NODE_H = 50;
   const MIN_SCALE = 0.3, MAX_SCALE = 3;
@@ -18,6 +18,9 @@
     const byId = new Map();
     members.forEach(m => byId.set(m.id, m));
 
+    // 入赘标记集合
+    const ruzhuiSet = new Set();
+
     // 夫妻合并：现配（spouseId 互指）合并为同一节点
     // subOf[被合并成员id] = 主成员id；subInfo[主成员id] = 被合并成员（用于卡片副行）
     const subOf = new Map();
@@ -28,9 +31,17 @@
       const s = byId.get(m.spouseId);
       if (subOf.has(s.id)) return;
       let main = m, sub = s;
-      if (m.gender === '女' && s.gender !== '女') { main = s; sub = m; }
+      // 入赘：女方为主节点，男方合并
+      const isRuzhui = m.marriageType === 'ruzhui' || s.marriageType === 'ruzhui';
+      if (isRuzhui) {
+        if (m.gender === '男' && s.gender === '女') { main = s; sub = m; }
+      } else {
+        if (m.gender === '女' && s.gender !== '女') { main = s; sub = m; }
+      }
       subOf.set(sub.id, main.id);
       subInfo.set(main.id, sub);
+      // 记录是否入赘，用于副行显示
+      if (isRuzhui) ruzhuiSet.add(main.id);
     });
     const realId = id => subOf.get(id) || id;
 
@@ -103,7 +114,7 @@
 
     let maxDepth = 0;
     Object.values(pos).forEach(p => { if (p.y > maxDepth) maxDepth = p.y; });
-    return { members, byId, subOf, subInfo, realId, childrenOf, roots, pos, totalW: Math.max(origin, 1), totalH: maxDepth + 1 };
+    return { members, byId, subOf, subInfo, ruzhuiSet, realId, childrenOf, roots, pos, totalW: Math.max(origin, 1), totalH: maxDepth + 1 };
   }
 
   function clipText(s, max) {
@@ -224,8 +235,9 @@
       const merged = L.subInfo.get(m.id);
       const spouse = merged || (m.spouseId && L.byId.get(m.spouseId) ? L.byId.get(m.spouseId) : null);
       const exSpouse = m.exSpouseId && L.byId.get(m.exSpouseId) ? L.byId.get(m.exSpouseId) : null;
+      const isRuzhui = L.ruzhuiSet.has(m.id);
       let subText = orderLabel;
-      if (spouse) subText += (subText ? ' · ' : '') + '配' + spouse.name;
+      if (spouse) subText += (subText ? ' · ' : '') + (isRuzhui ? '赘婿' : '配') + spouse.name;
       if (exSpouse) subText += (subText ? ' · ' : '') + '前配' + exSpouse.name;
       if (!subText) subText = (m.generation ? '第' + m.generation + '世' : '');
       t2.textContent = clipText(subText, 11);
