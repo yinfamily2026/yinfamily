@@ -162,18 +162,29 @@
     renderUserList();
   }
 
-  function handleLogin(e) {
+  async function handleLogin(e) {
     e.preventDefault();
     const user = $('loginUser').value.trim();
     const pass = $('loginPass').value.trim();
-    state.family = loadLocal() || defaultFamily();
-    const users = getUsers();
+    if (!user || !pass) { alert('请输入用户名和密码'); return; }
+    // 优先从云端读取用户列表（永久保存，换设备也可登录）
+    let users = null;
+    try {
+      const cloud = await cloudFetch();
+      if (cloud && cloud.users && cloud.users.length) users = cloud.users;
+    } catch (err) {}
+    if (!users) {
+      state.family = loadLocal() || defaultFamily();
+      users = getUsers();
+    }
     const found = users.find(u => u.user === user && u.pass === pass);
     if (found) {
       state.currentUser = found;
       setSession({ user: found.user });
       $('loginUser').value = '';
       $('loginPass').value = '';
+      state.family = loadLocal() || defaultFamily();
+      state.family.users = users;
       showApp();
       document.title = state.family.clan.name + ' · 家谱';
       setSync('offline', '正在连接云端...');
@@ -184,21 +195,30 @@
     }
   }
 
-  function handleRegister(e) {
+  async function handleRegister(e) {
     e.preventDefault();
     const user = $('regUser').value.trim();
     const pass = $('regPass').value.trim();
     if (!user || !pass) { alert('请填写用户名和密码'); return; }
-    state.family = loadLocal() || defaultFamily();
-    const users = getUsers();
+    // 优先从云端检查重名（云端用户永久保存）
+    let users = null;
+    try {
+      const cloud = await cloudFetch();
+      if (cloud && cloud.users && cloud.users.length) users = cloud.users;
+    } catch (err) {}
+    if (!users) {
+      state.family = loadLocal() || defaultFamily();
+      users = getUsers();
+    }
     if (users.find(u => u.user === user)) { alert('该用户名已存在'); return; }
     const newUser = { user, pass, role: 'user' };
     users.push(newUser);
+    state.family = state.family || defaultFamily();
     saveUsers(users);
     state.currentUser = newUser;
     setSession({ user: newUser.user });
     $('regUser').value = ''; $('regPass').value = '';
-    alert('注册成功！您可以查看族谱和续谱');
+    alert('注册成功！账号已永久保存，可在任何设备登录');
     showApp();
     document.title = state.family.clan.name + ' · 家谱';
     setSync('offline', '正在连接云端...');
