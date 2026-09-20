@@ -501,7 +501,7 @@
       ['母亲', mother ? mother.name : ''],
       ['原配', exSpouse ? exSpouse.name : ''],
       ['现配', spouse ? spouse.name : ''],
-      ['婚姻', maritalMap[m.marital] || ''],
+      ['婚姻', (maritalMap[m.marital] || '') + (m.marriageType === 'ruzhui' ? '（入赘）' : '')],
       ['兄弟', brothers.length ? brothers.map(b => b.name).join('、') : ''],
       ['姐妹', sisters.length ? sisters.map(s => s.name).join('、') : ''],
       ['子女', children.length ? children.map(c => c.name).join('、') : ''],
@@ -569,6 +569,7 @@
     $('f_spouse').value = m && m.spouseId ? m.spouseId : '';
     $('f_exSpouse').value = m && m.exSpouseId ? m.exSpouseId : '';
     $('f_marital').value = m && m.marital ? m.marital : '';
+    $('f_marriageType').value = m && m.marriageType ? m.marriageType : '';
     $('f_birth').value = m ? m.birth || '' : '';
     $('f_death').value = m ? m.death || '' : '';
     $('f_birthPlace').value = m ? m.birthPlace || '' : '';
@@ -612,6 +613,7 @@
       spouseId: $('f_spouse').value || null,
       exSpouseId: $('f_exSpouse').value || null,
       marital: $('f_marital').value || null,
+      marriageType: $('f_marriageType').value || null,
       brotherIds: brotherIds,
       sisterIds: sisterIds,
       birth: $('f_birth').value.trim(),
