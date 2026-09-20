@@ -97,14 +97,18 @@
 
   // ---------- 用户系统 ----------
   function getUsers() {
-    try {
-      const users = JSON.parse(localStorage.getItem(LS_USERS));
-      if (users && users.length) return users;
-    } catch (e) {}
+    if (state.family && state.family.users && state.family.users.length) {
+      return state.family.users;
+    }
     return [{ user: 'admin', pass: 'yin190523', role: 'admin' }];
   }
 
-  function saveUsers(users) { localStorage.setItem(LS_USERS, JSON.stringify(users)); }
+  function saveUsers(users) {
+    if (!state.family) state.family = defaultFamily();
+    state.family.users = users;
+    localStorage.setItem(LS_KEY, JSON.stringify(state.family));
+    cloudSave(state.family);
+  }
 
   function getSession() {
     try { return JSON.parse(localStorage.getItem(LS_SESSION)); } catch (e) { return null; }
@@ -162,6 +166,7 @@
     e.preventDefault();
     const user = $('loginUser').value.trim();
     const pass = $('loginPass').value.trim();
+    state.family = loadLocal() || defaultFamily();
     const users = getUsers();
     const found = users.find(u => u.user === user && u.pass === pass);
     if (found) {
@@ -170,7 +175,6 @@
       $('loginUser').value = '';
       $('loginPass').value = '';
       showApp();
-      state.family = loadLocal() || defaultFamily();
       document.title = state.family.clan.name + ' · 家谱';
       setSync('offline', '正在连接云端...');
       refreshAll();
@@ -185,6 +189,7 @@
     const user = $('regUser').value.trim();
     const pass = $('regPass').value.trim();
     if (!user || !pass) { alert('请填写用户名和密码'); return; }
+    state.family = loadLocal() || defaultFamily();
     const users = getUsers();
     if (users.find(u => u.user === user)) { alert('该用户名已存在'); return; }
     const newUser = { user, pass, role: 'user' };
@@ -195,7 +200,6 @@
     $('regUser').value = ''; $('regPass').value = '';
     alert('注册成功！您可以查看族谱和续谱');
     showApp();
-    state.family = loadLocal() || defaultFamily();
     document.title = state.family.clan.name + ' · 家谱';
     setSync('offline', '正在连接云端...');
     refreshAll();
@@ -323,7 +327,7 @@
 
   // ---------- 数据加载 ----------
   function defaultFamily() {
-    return { clan: { name: '清平哨尹氏', surname: '尹', updatedAt: null }, members: [] };
+    return { clan: { name: '清平哨尹氏', surname: '尹', updatedAt: null }, members: [], users: [{ user: 'admin', pass: 'yin190523', role: 'admin' }] };
   }
 
   function loadLocal() {
@@ -334,6 +338,13 @@
   async function loadFromCloud() {
     const cloud = await cloudFetch();
     if (cloud && cloud.members) {
+      // 迁移：云端无 users 时从本地 localStorage 迁移
+      if (!cloud.users || !cloud.users.length) {
+        let localUsers = null;
+        try { localUsers = JSON.parse(localStorage.getItem(LS_USERS)); } catch (e) {}
+        cloud.users = (localUsers && localUsers.length) ? localUsers : [{ user: 'admin', pass: 'yin190523', role: 'admin' }];
+        cloudSave(cloud);
+      }
       if (cloud.members.length || !(state.family.members && state.family.members.length)) {
         state.family = cloud;
       } else {
@@ -377,12 +388,12 @@
     }
     const session = getSession();
     if (session) {
+      state.family = loadLocal() || defaultFamily();
       const users = getUsers();
       const u = users.find(x => x.user === session.user);
       if (u) {
         state.currentUser = u;
         showApp();
-        state.family = loadLocal() || defaultFamily();
         document.title = state.family.clan.name + ' · 家谱';
         setSync('offline', '正在连接云端...');
         refreshAll();
@@ -405,6 +416,7 @@
     renderTree();
     renderMembers();
     fillFormSelects();
+    renderUserList();
   }
 
   function renderTree() {
