@@ -59,6 +59,7 @@
         if (spouse) parts.push('现配 ' + spouse.name);
         const maritalMap = { married: '已婚', divorced: '已离异', remarried: '再婚', widowed: '丧偶' };
         if (m.marital && maritalMap[m.marital]) parts.push(maritalMap[m.marital]);
+        if (m.marriageType === 'ruzhui') parts.push('入赘');
         if (m.wechat) parts.push('微信 ' + m.wechat);
         if (m.address) parts.push('住址 ' + m.address);
         html += `<div class="p-entry">· ${m.name}${parts.length ? '（' + parts.join('，') + '）' : ''}</div>`;
