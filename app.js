@@ -57,11 +57,19 @@
     $('s_gatePass').value = '';
   }
 
-  // ---------- 云端同步 ----------
+  // ---------- 云端同步（5秒超时，避免网络慢时卡住） ----------
+  function withTimeout(signal) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 5000);
+    return { signal: ctrl.signal, done: () => clearTimeout(timer) };
+  }
+
   async function cloudFetch() {
+    const t = withTimeout();
     try {
       const res = await fetch(CLOUD_URL + '/family_tree?select=data&id=eq.1', {
-        headers: { apikey: CLOUD_KEY, Authorization: 'Bearer ' + CLOUD_KEY }
+        headers: { apikey: CLOUD_KEY, Authorization: 'Bearer ' + CLOUD_KEY },
+        signal: t.signal
       });
       if (!res.ok) throw new Error('HTTP ' + res.status);
       const rows = await res.json();
@@ -69,12 +77,15 @@
     } catch (e) {
       console.warn('云端读取失败：', e.message);
       return null;
+    } finally {
+      t.done();
     }
   }
 
   async function cloudSave(data) {
     if (cloudSyncing) return false;
     cloudSyncing = true;
+    const t = withTimeout();
     try {
       const res = await fetch(CLOUD_URL + '/family_tree?id=eq.1', {
         method: 'PATCH',
@@ -84,7 +95,8 @@
           'Content-Type': 'application/json',
           Prefer: 'return=minimal'
         },
-        body: JSON.stringify({ data: data })
+        body: JSON.stringify({ data: data }),
+        signal: t.signal
       });
       return res.ok;
     } catch (e) {
@@ -92,6 +104,7 @@
       return false;
     } finally {
       cloudSyncing = false;
+      t.done();
     }
   }
 
@@ -162,36 +175,53 @@
     renderUserList();
   }
 
+  function doLogin(found, users) {
+    state.currentUser = found;
+    setSession({ user: found.user });
+    $('loginUser').value = '';
+    $('loginPass').value = '';
+    state.family = loadLocal() || defaultFamily();
+    if (users && users.length) state.family.users = users;
+    showApp();
+    document.title = state.family.clan.name + ' · 家谱';
+    setSync('offline', '正在连接云端...');
+    refreshAll();
+    loadFromCloud();
+  }
+
   async function handleLogin(e) {
     e.preventDefault();
     const user = $('loginUser').value.trim();
     const pass = $('loginPass').value.trim();
     if (!user || !pass) { alert('请输入用户名和密码'); return; }
-    // 优先从云端读取用户列表（永久保存，换设备也可登录）
+    // 1. 本地优先验证（老用户瞬间登录，不卡网络）
+    state.family = loadLocal() || defaultFamily();
+    const localUsers = getUsers();
+    const localFound = localUsers.find(u => u.user === user && u.pass === pass);
+    if (localFound) {
+      doLogin(localFound, localUsers);
+      loadFromCloud(); // 后台同步云端最新用户列表
+      return;
+    }
+    // 2. 本地未命中（新设备/新注册用户），云端验证
+    const btn = $('btnLogin');
+    const oldText = btn.textContent;
+    btn.disabled = true; btn.textContent = '正在验证...';
     let users = null;
     try {
       const cloud = await cloudFetch();
       if (cloud && cloud.users && cloud.users.length) users = cloud.users;
     } catch (err) {}
-    if (!users) {
-      state.family = loadLocal() || defaultFamily();
-      users = getUsers();
-    }
-    const found = users.find(u => u.user === user && u.pass === pass);
-    if (found) {
-      state.currentUser = found;
-      setSession({ user: found.user });
-      $('loginUser').value = '';
-      $('loginPass').value = '';
-      state.family = loadLocal() || defaultFamily();
-      state.family.users = users;
-      showApp();
-      document.title = state.family.clan.name + ' · 家谱';
-      setSync('offline', '正在连接云端...');
-      refreshAll();
-      loadFromCloud();
-    } else {
+    btn.disabled = false; btn.textContent = oldText;
+    if (users) {
+      const found = users.find(u => u.user === user && u.pass === pass);
+      if (found) {
+        doLogin(found, users);
+        return;
+      }
       alert('用户名或密码不正确');
+    } else {
+      alert('连接云端超时，请稍后重试');
     }
   }
 
@@ -201,20 +231,24 @@
     const pass = $('regPass').value.trim();
     if (!user || !pass) { alert('请填写用户名和密码'); return; }
     // 优先从云端检查重名（云端用户永久保存）
+    const btn = $('btnRegister');
+    const oldText = btn.textContent;
+    btn.disabled = true; btn.textContent = '正在注册...';
     let users = null;
     try {
       const cloud = await cloudFetch();
       if (cloud && cloud.users && cloud.users.length) users = cloud.users;
     } catch (err) {}
     if (!users) {
-      state.family = loadLocal() || defaultFamily();
+      state.family = state.family || loadLocal() || defaultFamily();
       users = getUsers();
     }
-    if (users.find(u => u.user === user)) { alert('该用户名已存在'); return; }
+    if (users.find(u => u.user === user)) { btn.disabled = false; btn.textContent = oldText; alert('该用户名已存在'); return; }
     const newUser = { user, pass, role: 'user' };
     users.push(newUser);
     state.family = state.family || defaultFamily();
     saveUsers(users);
+    btn.disabled = false; btn.textContent = oldText;
     state.currentUser = newUser;
     setSession({ user: newUser.user });
     $('regUser').value = ''; $('regPass').value = '';
